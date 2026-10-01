@@ -1,0 +1,9 @@
+server:
+  port: 8761
+
+eureka:
+  client:
+    register-with-eureka: false   # Kendini kaydetme
+    fetch-registry: false         # Diğer servisleri çekme
+    jersey:
+      enabled: false              # Jersey transport'unu kapat, RestClient kullan
