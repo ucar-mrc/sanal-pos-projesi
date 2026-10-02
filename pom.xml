@@ -29,6 +29,7 @@
 
     <modules>
         <module>eureka-server</module>
+        <module>bank-service</module>
     </modules>
 
     <dependencyManagement>
