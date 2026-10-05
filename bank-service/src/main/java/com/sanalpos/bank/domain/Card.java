@@ -22,8 +22,7 @@ public class Card {
     @JoinColumn(name = "customer_id", nullable = false)
     private Customer customer;
 
-    @Column(name = "card_number", nullable = false, unique = true, length = 19)
-    private String cardNumber;
+
 
     @Column(name = "card_holder_name", nullable = false, length = 200)
     private String cardHolderName;
@@ -34,8 +33,11 @@ public class Card {
     @Column(name = "expiry_year", nullable = false)
     private Integer expiryYear;
 
-    @Column(name = "cvv_hash", nullable = false, length = 255)
-    private String cvvHash;
+    @Column(name = "card_number_hash", nullable = false, unique = true, length = 64)
+    private String cardNumberHash;
+
+    @Column(name = "card_number_last4", nullable = false, length = 4)
+    private String cardNumberLast4;
 
     @Column(name = "card_type", nullable = false, length = 20)
     private String cardType;

@@ -2,6 +2,7 @@ package com.sanalpos.bank.service;
 
 import com.sanalpos.bank.domain.*;
 import com.sanalpos.bank.dto.*;
+import com.sanalpos.bank.exception.InsufficientBalanceException;
 import com.sanalpos.bank.exception.ResourceNotFoundException;
 import com.sanalpos.bank.repository.AccountRepository;
 import com.sanalpos.bank.repository.TransactionRepository;
@@ -33,8 +34,7 @@ public class TransactionService {
         BigDecimal amount = request.amount();
 
         if (account.getBalance().compareTo(amount) < 0) {
-            throw new IllegalArgumentException(
-                    "Yetersiz bakiye. Mevcut: " + account.getBalance() + ", istenen: " + amount);
+            throw new InsufficientBalanceException(account.getBalance(), amount);
         }
 
         account.setBalance(account.getBalance().subtract(amount));
