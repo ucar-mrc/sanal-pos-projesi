@@ -5,3 +5,4 @@
 -- =====================================================
 
 CREATE DATABASE ecommerce_db;
+CREATE DATABASE pos_db;

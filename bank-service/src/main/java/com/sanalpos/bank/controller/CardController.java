@@ -41,4 +41,9 @@ public class CardController {
         cardService.deactivate(id);
         return ResponseEntity.noContent().build();
     }
+    @PatchMapping("/{id}/activate")
+    public ResponseEntity<Void> activate(@PathVariable Long id) {
+        cardService.activate(id);
+        return ResponseEntity.noContent().build();
+    }
 }

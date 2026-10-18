@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
-
+import feign.FeignException;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -56,4 +56,16 @@ public class GlobalExceptionHandler {
         body.put("message", message);
         return ResponseEntity.status(status).body(body);
     }
+
+
+
+    @ExceptionHandler(FeignException.class)
+    public ResponseEntity<Map<String, Object>> handleFeign(FeignException ex) {
+        HttpStatus status = HttpStatus.resolve(ex.status());
+        if (status == null) status = HttpStatus.BAD_GATEWAY;
+        String body = ex.contentUTF8();
+        return buildResponse(status, (body == null || body.isBlank())
+                ? "Servisler arası iletişim hatası" : body);
+    }
+
 }

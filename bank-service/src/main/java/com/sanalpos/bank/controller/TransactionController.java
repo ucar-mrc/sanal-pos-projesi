@@ -1,15 +1,14 @@
 package com.sanalpos.bank.controller;
 
-import com.sanalpos.bank.dto.CreditRequest;
-import com.sanalpos.bank.dto.DebitRequest;
-import com.sanalpos.bank.dto.TransactionResponse;
-import com.sanalpos.bank.dto.TransferRequest;
+import com.sanalpos.bank.dto.*;
 import com.sanalpos.bank.service.IdempotencyService;
 import com.sanalpos.bank.service.TransactionService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import com.sanalpos.bank.dto.CardPaymentRequest;
+import com.sanalpos.bank.dto.CardPaymentResponse;
 
 import java.util.List;
 import java.util.Optional;
@@ -70,6 +69,30 @@ public class TransactionController {
     public ResponseEntity<List<TransactionResponse>> getAccountTransactions(
             @PathVariable Long accountId) {
         return ResponseEntity.ok(transactionService.getAccountTransactions(accountId));
+    }
+
+    @PostMapping("/card-payment")
+    public ResponseEntity<CardPaymentResponse> cardPayment(
+            @RequestHeader(value = IDEMPOTENCY_HEADER, required = false) String idempotencyKey,
+            @Valid @RequestBody CardPaymentRequest request) {
+
+        // Idempotency kontrolü
+        if (hasKey(idempotencyKey)) {
+            Optional<IdempotencyService.CachedResponse<CardPaymentResponse>> cached =
+                    idempotencyService.findCached(idempotencyKey, CardPaymentResponse.class);
+            if (cached.isPresent()) {
+                return ResponseEntity.status(cached.get().status()).body(cached.get().body());
+            }
+        }
+
+        CardPaymentResponse response = transactionService.cardPayment(request);
+
+        if (hasKey(idempotencyKey)) {
+            idempotencyService.save(idempotencyKey, "/api/v1/transactions/card-payment",
+                    HttpStatus.CREATED.value(), response);
+        }
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     // =====================================================

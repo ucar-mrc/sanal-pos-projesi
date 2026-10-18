@@ -82,6 +82,13 @@ public class CardService {
         card.setActive(false);
         // @Transactional + dirty checking sayesinde save() gerekmez
     }
+    @Transactional
+    public void activate(Long id) {
+        Card card = cardRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Card", "id", id));
+        card.setActive(true);
+        // @Transactional + dirty checking sayesinde save() gerekmez
+    }
 
     // =====================================================
     // YARDIMCI

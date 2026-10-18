@@ -5,7 +5,10 @@ import com.sanalpos.bank.dto.*;
 import com.sanalpos.bank.exception.InsufficientBalanceException;
 import com.sanalpos.bank.exception.ResourceNotFoundException;
 import com.sanalpos.bank.repository.AccountRepository;
+import com.sanalpos.bank.repository.CardRepository;
 import com.sanalpos.bank.repository.TransactionRepository;
+import com.sanalpos.bank.util.CardHashUtil;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,11 +21,14 @@ public class TransactionService {
 
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
+    private final CardRepository cardRepository;
 
     public TransactionService(AccountRepository accountRepository,
-                              TransactionRepository transactionRepository) {
+                              TransactionRepository transactionRepository,
+                              CardRepository cardRepository) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
+        this.cardRepository = cardRepository;
     }
 
     // =====================================================
@@ -181,6 +187,62 @@ public class TransactionService {
                 tx.getBalanceAfter(),
                 tx.getReferenceId(),
                 tx.getDescription(),
+                tx.getCreatedAt()
+        );
+    }
+
+    @Transactional
+    public CardPaymentResponse cardPayment(CardPaymentRequest request) {
+        String normalized = CardHashUtil.normalize(request.cardNumber());
+        String hash = CardHashUtil.sha256(normalized);
+
+        Card card = cardRepository.findByCardNumberHash(hash)
+                .orElseThrow(() -> new ResourceNotFoundException("Card", "cardNumber",
+                        "****" + CardHashUtil.last4(normalized)));
+
+        if (!card.isActive()) {
+            throw new IllegalArgumentException("Kart pasif durumda");
+        }
+
+        Customer customer = card.getCustomer();
+
+        // Müşterinin birincil TRY/CHECKING hesabını bul
+        Account account = accountRepository.findByCustomerId(customer.getId())
+                .stream()
+                .filter(a -> a.getCurrency() == Currency.TRY
+                        && a.getAccountType() == AccountType.CHECKING)
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Account", "customerId", customer.getId()));
+
+        // Lock + bakiye kontrolü + debit
+        Account locked = accountRepository.findByIdWithLock(account.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Account", "id", account.getId()));
+
+        if (locked.getBalance().compareTo(request.amount()) < 0) {
+            throw new InsufficientBalanceException(locked.getBalance(), request.amount());
+        }
+
+        locked.setBalance(locked.getBalance().subtract(request.amount()));
+
+        String referenceId = UUID.randomUUID().toString();
+        Transaction tx = buildTransaction(
+                locked,
+                TransactionType.DEBIT,
+                request.amount(),
+                locked.getBalance(),
+                referenceId,
+                request.description() != null ? request.description() : "Card payment"
+        );
+        transactionRepository.save(tx);
+
+        return new CardPaymentResponse(
+                tx.getId(),
+                referenceId,
+                tx.getAmount(),
+                tx.getBalanceAfter(),
+                CardHashUtil.last4(normalized),
+                "AUTH_OK",
                 tx.getCreatedAt()
         );
     }
