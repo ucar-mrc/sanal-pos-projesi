@@ -6,6 +6,7 @@ import com.sanalpos.bank.exception.InsufficientBalanceException;
 import com.sanalpos.bank.exception.ResourceNotFoundException;
 import com.sanalpos.bank.repository.AccountRepository;
 import com.sanalpos.bank.repository.CardRepository;
+import com.sanalpos.bank.repository.CustomerRepository;
 import com.sanalpos.bank.repository.TransactionRepository;
 import com.sanalpos.bank.util.CardHashUtil;
 
@@ -22,13 +23,16 @@ public class TransactionService {
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
     private final CardRepository cardRepository;
+    private final CustomerRepository customerRepository; // <-- final ekle
 
     public TransactionService(AccountRepository accountRepository,
                               TransactionRepository transactionRepository,
-                              CardRepository cardRepository) {
+                              CardRepository cardRepository,
+                              CustomerRepository customerRepository) { // <-- Parametreye EKLE
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.cardRepository = cardRepository;
+        this.customerRepository = customerRepository; // Artık doğru değeri alacak
     }
 
     // =====================================================
@@ -245,5 +249,73 @@ public class TransactionService {
                 "AUTH_OK",
                 tx.getCreatedAt()
         );
+    }
+    @Transactional
+    public TransactionResponse refund(RefundRequest request) {
+        // 1. İşlemi referans ile bul
+        Transaction originalTx = transactionRepository.findByReferenceId(request.bankTransactionRef())
+                .stream().findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException("Transaction", "referenceId", request.bankTransactionRef()));
+
+        // 2. Orijinal işlem DEBIT olmalı
+        if (originalTx.getType() != TransactionType.DEBIT) {
+            throw new IllegalArgumentException("Sadece DEBIT işlemleri iade edilebilir!");
+        }
+
+        // 3. İade işlemi için hesabı bul ve kilitle
+        Account account = accountRepository.findByIdWithLock(originalTx.getAccount().getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Account", "id", originalTx.getAccount().getId()));
+
+        // 4. Parayı geri yatır
+        account.setBalance(account.getBalance().add(originalTx.getAmount()));
+
+        // 5. Yeni Transaction kaydı at (CREDIT tipinde)
+        Transaction tx = buildTransaction(
+                account,
+                TransactionType.CREDIT,
+                originalTx.getAmount(),
+                account.getBalance(),
+                UUID.randomUUID().toString(),
+                "REFUND for " + request.bankTransactionRef()
+        );
+        transactionRepository.save(tx);
+
+        return toResponse(tx);
+    }
+
+    @Transactional
+    public TransactionResponse creditSeller(CreditSellerRequest request) {
+        // 1. Müşteriyi bul (Satıcı = Müşteri)
+        Customer customer = customerRepository.findById(request.customerId())
+                .orElseThrow(() -> new ResourceNotFoundException("Customer", "id", request.customerId()));
+
+        // 2. Birincil hesabı bul (TRY + CHECKING)
+        Account account = accountRepository.findByCustomerId(customer.getId())
+                .stream()
+                .filter(a -> a.getCurrency() == request.currency()
+                        && a.getAccountType() == AccountType.CHECKING)
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Account", "customerId", customer.getId()));
+
+        // 3. Lock + Bakiye ekle
+        Account locked = accountRepository.findByIdWithLock(account.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Account", "id", account.getId()));
+
+        locked.setBalance(locked.getBalance().add(request.amount()));
+
+        // 4. Transaction kaydı
+        String referenceId = UUID.randomUUID().toString();
+        Transaction tx = buildTransaction(
+                locked,
+                TransactionType.CREDIT,
+                request.amount(),
+                locked.getBalance(),
+                referenceId,
+                request.description() != null ? request.description() : "Settlement payout"
+        );
+        transactionRepository.save(tx);
+
+        return toResponse(tx);
     }
 }

@@ -28,4 +28,8 @@ public class PaymentController {
         PaymentResponse response = paymentService.processPayment(request, idempotencyKey);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
+    @PostMapping("/{id}/refund")
+    public ResponseEntity<PaymentResponse> refund(@PathVariable Long id) {
+        return ResponseEntity.ok(paymentService.refund(id));
+    }
 }

@@ -4,15 +4,15 @@ import com.sanalpos.pos.client.BankServiceClient;
 import com.sanalpos.pos.domain.CommissionRate;
 import com.sanalpos.pos.domain.Payment;
 import com.sanalpos.pos.domain.PaymentStatus;
-import com.sanalpos.pos.dto.BankPaymentRequest;
-import com.sanalpos.pos.dto.BankPaymentResponse;
-import com.sanalpos.pos.dto.PaymentRequest;
-import com.sanalpos.pos.dto.PaymentResponse;
+import com.sanalpos.pos.domain.SellerBalance;
+import com.sanalpos.pos.dto.*;
 import com.sanalpos.pos.exception.ResourceNotFoundException;
 import com.sanalpos.pos.repository.CommissionRateRepository;
 import com.sanalpos.pos.repository.PaymentRepository;
+import com.sanalpos.pos.repository.SellerBalanceRepository;
 import com.sanalpos.pos.util.CardHashUtil;
 import feign.FeignException;
+import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -29,13 +29,19 @@ public class PaymentService {
     private final PaymentRepository paymentRepository;
     private final CommissionRateRepository commissionRateRepository;
     private final BankServiceClient bankServiceClient;
+    private final SellerBalanceService sellerBalanceService;
+    private final SellerBalanceRepository sellerBalanceRepository;// YENİ
 
     public PaymentService(PaymentRepository paymentRepository,
                           CommissionRateRepository commissionRateRepository,
-                          BankServiceClient bankServiceClient) {
+                          BankServiceClient bankServiceClient,
+                          SellerBalanceService sellerBalanceService,
+                          SellerBalanceRepository sellerBalanceRepository) {
         this.paymentRepository = paymentRepository;
         this.commissionRateRepository = commissionRateRepository;
         this.bankServiceClient = bankServiceClient;
+        this.sellerBalanceService = sellerBalanceService;
+        this.sellerBalanceRepository = sellerBalanceRepository;
     }
 
     /**
@@ -100,6 +106,14 @@ public class PaymentService {
             saved.setBankTransactionRef(bankResponse.referenceId());
             Payment updated = paymentRepository.saveAndFlush(saved);
             log.info("Payment başarılı: id={}, bankRef={}", updated.getId(), bankResponse.referenceId());
+
+// 6.1) Satıcının bekleyen bakiyesini artır
+            sellerBalanceService.addPendingBalance(
+                    updated.getSellerId(),
+                    updated.getNetAmount(),
+                    updated.getCurrency()
+            );
+
             return toResponse(updated);
 
         } catch (FeignException e) {
@@ -109,6 +123,53 @@ public class PaymentService {
             log.warn("Payment başarısız: id={}, bank status={}", saved.getId(), e.status());
             throw e;
         }
+    }
+
+    @Transactional
+    public PaymentResponse refund(Long paymentId) {
+        Payment payment = paymentRepository.findById(paymentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Payment", "id", paymentId));
+
+        if (payment.getStatus() != PaymentStatus.AUTH_OK) {
+            throw new IllegalArgumentException("Sadece AUTH_OK ödemeler iade edilebilir. Mevcut: " + payment.getStatus());
+        }
+
+        // 1. Banka Servisi'ni çağır (Transaction dışında olsaydı daha iyiydi ama kısa tutuyoruz)
+        BankRefundRequest req = new BankRefundRequest(payment.getBankTransactionRef());
+        try {
+            bankServiceClient.refund(req);
+        } catch (FeignException e) {
+            throw new IllegalStateException("Banka iadesi başarısız: " + e.contentUTF8());
+        }
+
+        // 2. Satıcı bakiyesini düş
+        SellerBalance balance = sellerBalanceRepository.findBySellerIdWithLock(payment.getSellerId())
+                .orElseThrow(() -> new ResourceNotFoundException("SellerBalance", "sellerId", payment.getSellerId()));
+
+        // Kural: Eğer para available_balance'a geçmişse oradan, geçmemişse pending'den düş
+        if (payment.getMaturedAt() != null) {
+            // Para çekilebilir durumdaydı
+            if (balance.getAvailableBalance().compareTo(payment.getNetAmount()) < 0) {
+                throw new IllegalStateException("Satıcının iade için yeterli available bakiyesi yok!");
+            }
+            balance.setAvailableBalance(balance.getAvailableBalance().subtract(payment.getNetAmount()));
+        } else {
+            // Para hala pending'de
+            if (balance.getPendingBalance().compareTo(payment.getNetAmount()) < 0) {
+                throw new IllegalStateException("Satıcının iade için yeterli pending bakiyesi yok!");
+            }
+            balance.setPendingBalance(balance.getPendingBalance().subtract(payment.getNetAmount()));
+        }
+
+        sellerBalanceRepository.saveAndFlush(balance);
+
+        // 3. Ödeme durumunu güncelle
+        payment.setStatus(PaymentStatus.REFUNDED);
+        paymentRepository.saveAndFlush(payment);
+
+        log.info("Ödeme iade edildi: id={}, sellerId={}", payment.getId(), payment.getSellerId());
+
+        return toResponse(payment);
     }
 
     private PaymentResponse toResponse(Payment payment) {
@@ -131,4 +192,7 @@ public class PaymentService {
                 payment.getUpdatedAt()
         );
     }
+
+
+
 }

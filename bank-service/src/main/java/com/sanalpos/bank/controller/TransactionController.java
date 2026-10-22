@@ -93,6 +93,31 @@ public class TransactionController {
         }
 
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }@PostMapping("/credit-seller")
+    public ResponseEntity<TransactionResponse> creditSeller(
+            @RequestHeader(value = IDEMPOTENCY_HEADER, required = false) String idempotencyKey,
+            @Valid @RequestBody CreditSellerRequest request) {
+
+        if (hasKey(idempotencyKey)) {
+            Optional<IdempotencyService.CachedResponse<TransactionResponse>> cached =
+                    idempotencyService.findCached(idempotencyKey, TransactionResponse.class);
+            if (cached.isPresent()) {
+                return ResponseEntity.status(cached.get().status()).body(cached.get().body());
+            }
+        }
+
+        TransactionResponse response = transactionService.creditSeller(request);
+
+        if (hasKey(idempotencyKey)) {
+            idempotencyService.save(idempotencyKey, "/api/v1/transactions/credit-seller",
+                    HttpStatus.CREATED.value(), response);
+        }
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+    @PostMapping("/refund")
+    public ResponseEntity<TransactionResponse> refund(@Valid @RequestBody RefundRequest request) {
+        return ResponseEntity.ok(transactionService.refund(request));
     }
 
     // =====================================================

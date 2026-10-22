@@ -78,4 +78,8 @@ public class Payment {
     void onUpdate() {
         this.updatedAt = Instant.now();
     }
+
+
+    @Column(name = "matured_at")
+    private Instant maturedAt;
 }
