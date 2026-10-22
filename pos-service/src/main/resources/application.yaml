@@ -34,8 +34,25 @@ eureka:
 
 # Feign için ortak timeout ayarları (Hafta 5'te detay)
 feign:
+  circuitbreaker:
+    enabled: true
   client:
     config:
       default:
         connect-timeout: 5000
         read-timeout: 10000
+
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 10           # Son 10 isteği izle
+        minimum-number-of-calls: 5        # En az 5 istek olmadan karar verme
+        failure-rate-threshold: 50        # %50'si hata verirse devreyi aç
+        wait-duration-in-open-state: 10s  # Açıkken 10 sn boyunca istek atma
+        permitted-number-of-calls-in-half-open-state: 3 # Yarı açıkken 3 istek dene
+        automatic-transition-from-open-to-half-open-enabled: true
+    instances:
+      bankService:                        # BankServiceClient için özel ayar
+        base-config: default

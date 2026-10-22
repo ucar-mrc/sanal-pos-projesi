@@ -9,8 +9,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 
-@FeignClient(name = "bank-service")
+@FeignClient(name = "bank-service", fallback = BankServiceFallback.class)
 public interface BankServiceClient {
+
 
     @PostMapping("/api/v1/transactions/card-payment")
     BankPaymentResponse cardPayment(

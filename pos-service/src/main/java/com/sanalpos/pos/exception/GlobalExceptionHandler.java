@@ -57,6 +57,10 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR,
                 "Beklenmeyen bir hata oluştu: " + ex.getMessage());
     }
+    @ExceptionHandler(BankServiceUnavailableException.class)
+    public ResponseEntity<Map<String, Object>> handleBankUnavailable(BankServiceUnavailableException ex) {
+        return buildResponse(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
+    }
 
     private String extractFeignMessage(FeignException ex) {
         // Feign, bank-service'ten gelen JSON'ı response body'de tutar.
