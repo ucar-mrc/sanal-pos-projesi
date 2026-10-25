@@ -26,3 +26,8 @@ eureka:
       defaultZone: http://localhost:8761/eureka/
   instance:
     prefer-ip-address: true
+
+app:
+  jwt:
+    secret: "sanal-pos-projesi-icin-cok-gizli-bir-anahtar-bu-en-az-256-bit-olmali"
+    expiration-ms: 86400000 # 24 saat (milisaniye cinsinden)

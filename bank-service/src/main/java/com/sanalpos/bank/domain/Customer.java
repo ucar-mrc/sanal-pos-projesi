@@ -56,4 +56,7 @@ public class Customer {
     void onUpdate() {
         this.updatedAt = Instant.now();
     }
+
+    @Column(length = 255)
+    private String password;
 }
